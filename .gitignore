@@ -1,0 +1,31 @@
+# Python environments, caches, and local configuration
+.venv/
+venv/
+**/.venv/
+**/venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.DS_Store
+.env
+
+# Local voice data and generated model weights
+data/audio/
+data/transcripts/transcripts.csv
+data/transcripts/*.wav
+data/transcripts/*.m4a
+data/transcripts/*.mp3
+data/transcripts/*.flac
+*.wav
+*.m4a
+*.mp3
+*.flac
+*.pt
+*.pth
+results/checkpoints/
+
+# Obsolete nested project copies and placeholder root entry point
+/Downloads/bilingual-speech-to-text/
+/bilingual-speech-to-text/
+/gitignore
+/main.py

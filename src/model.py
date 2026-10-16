@@ -1,6 +1,7 @@
 
 import torch
 import torch.nn as nn
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, pad_sequence
 
 class CNNBiLSTM(nn.Module):
     def __init__(
@@ -50,14 +51,52 @@ class CNNBiLSTM(nn.Module):
             vocab_size
         )
 
-    def forward(self, x):
+    def output_lengths(self, input_lengths):
+        lengths = torch.as_tensor(input_lengths, dtype=torch.long).cpu()
+        for layer in self.cnn:
+            if isinstance(layer, nn.Conv1d):
+                lengths = (
+                    lengths
+                    + 2 * layer.padding[0]
+                    - layer.dilation[0] * (layer.kernel_size[0] - 1)
+                    - 1
+                ) // layer.stride[0] + 1
+        return lengths
+
+    def forward(self, x, input_lengths=None):
         # Input: [batch, 80 mel features, time frames]
-        x = self.cnn(x)
+        if input_lengths is None:
+            input_lengths = torch.full(
+                (x.size(0),), x.size(2), dtype=torch.long
+            )
+        else:
+            input_lengths = torch.as_tensor(input_lengths, dtype=torch.long).cpu()
+
+        if input_lengths.numel() != x.size(0):
+            raise ValueError("input_lengths must contain one length per sample")
+        if torch.any(input_lengths <= 0) or torch.any(input_lengths > x.size(2)):
+            raise ValueError("input_lengths must be positive and no longer than the input")
+
+        output_lengths = self.output_lengths(input_lengths)
+        cnn_sequences = [
+            self.cnn(x[index : index + 1, :, :length]).squeeze(0).transpose(0, 1)
+            for index, length in enumerate(input_lengths.tolist())
+        ]
+        x = pad_sequence(cnn_sequences, batch_first=True)
 
         # LSTM input: [batch, time frames, CNN features]
-        x = x.transpose(1, 2)
-
-        x, _ = self.bilstm(x)
+        packed = pack_padded_sequence(
+            x,
+            output_lengths,
+            batch_first=True,
+            enforce_sorted=False,
+        )
+        packed, _ = self.bilstm(packed)
+        x, _ = pad_packed_sequence(
+            packed,
+            batch_first=True,
+            total_length=x.size(1),
+        )
 
         # Output: [batch, time frames, vocabulary size]
         logits = self.classifier(x)
