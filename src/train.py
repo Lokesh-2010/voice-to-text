@@ -5,7 +5,7 @@ from pathlib import Path
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 
 if __package__:
     from .audio_preprocessing import N_MELS, extract_mel_spectrogram, load_audio
@@ -393,6 +393,236 @@ def train(args):
     print(f"Saved checkpoint to {checkpoint_path}")
 
 
+def _fleurs_checkpoint_path(checkpoint):
+    checkpoint_path = Path(checkpoint)
+    if not checkpoint_path.is_absolute():
+        checkpoint_path = PROJECT_ROOT / checkpoint_path
+    if checkpoint_path.exists():
+        raise FileExistsError(
+            f"Checkpoint already exists and will not be overwritten: "
+            f"{checkpoint_path}. Choose a new --checkpoint path."
+        )
+    return checkpoint_path
+
+
+def _fleurs_loader(dataset, indices, batch_size, shuffle):
+    return DataLoader(
+        Subset(dataset, indices),
+        batch_size=batch_size,
+        shuffle=shuffle,
+        collate_fn=collate_batch,
+    )
+
+
+def _balanced_short_indices(dataset, samples_per_language):
+    selected = []
+    for language in sorted(SUPPORTED_LANGUAGES):
+        language_indices = [
+            index
+            for index, record in enumerate(dataset.records)
+            if record["language"] == language
+        ]
+        if len(language_indices) < samples_per_language:
+            raise ValueError(
+                f"FLEURS split has {len(language_indices)} {language} examples; "
+                f"{samples_per_language} are required for the smoke test"
+            )
+        selected.extend(
+            sorted(language_indices, key=lambda index: dataset[index][0].shape[1])[
+                :samples_per_language
+            ]
+        )
+    return selected
+
+
+def _fleurs_epoch(model, loader, criterion, device, optimizer=None):
+    training = optimizer is not None
+    model.train(training)
+    total_loss = 0.0
+    batch_count = 0
+    for features, targets, input_lengths, target_lengths in loader:
+        features = features.to(device)
+        targets = targets.to(device)
+        if training:
+            optimizer.zero_grad()
+        with torch.set_grad_enabled(training):
+            logits = model(features, input_lengths)
+            output_lengths = model.output_lengths(input_lengths)
+            if logits.shape[-1] != model.classifier.out_features:
+                raise RuntimeError(
+                    "CNN-BiLSTM output dimension does not match its classifier"
+                )
+            log_probs = logits.log_softmax(dim=-1).transpose(0, 1)
+            loss = criterion(
+                log_probs,
+                targets,
+                output_lengths,
+                target_lengths,
+            )
+            if not torch.isfinite(loss):
+                raise RuntimeError(
+                    "Non-finite FLEURS CTC loss; stopping without saving a checkpoint"
+                )
+            if training:
+                loss.backward()
+                optimizer.step()
+        total_loss += loss.item()
+        batch_count += 1
+    if batch_count == 0:
+        raise ValueError("FLEURS loader produced no batches")
+    return total_loss / batch_count
+
+
+def _load_fleurs_datasets(manifest_path):
+    try:
+        from .fleurs_dataset import FleursManifestDataset
+    except ImportError:
+        from src.fleurs_dataset import FleursManifestDataset
+
+    train_dataset = FleursManifestDataset(manifest_path, "train")
+    validation_dataset = FleursManifestDataset(manifest_path, "validation")
+    missing_languages = SUPPORTED_LANGUAGES - set(train_dataset.language_counts)
+    if missing_languages:
+        raise ValueError(
+            "FLEURS training requires examples from both languages; missing: "
+            f"{', '.join(sorted(missing_languages))}"
+        )
+    if train_dataset.vocabulary.char_to_id != validation_dataset.vocabulary.char_to_id:
+        raise ValueError(
+            "FLEURS train and validation datasets loaded different vocabularies"
+        )
+    return train_dataset, validation_dataset
+
+
+def _create_fleurs_model(vocabulary, device):
+    model = CNNBiLSTM(
+        n_mels=N_MELS,
+        vocab_size=len(vocabulary.char_to_id),
+    ).to(device)
+    output_classes = model.classifier.out_features
+    if output_classes != len(vocabulary.char_to_id):
+        raise ValueError(
+            f"CNN-BiLSTM output has {output_classes} classes, but the FLEURS "
+            f"vocabulary has {len(vocabulary.char_to_id)}"
+        )
+    if vocabulary.char_to_id.get(BLANK_TOKEN) != BLANK_ID:
+        raise ValueError(
+            f"FLEURS vocabulary must map {BLANK_TOKEN!r} to CTC blank ID {BLANK_ID}"
+        )
+    return model
+
+
+def train_fleurs(args):
+    checkpoint_path = _fleurs_checkpoint_path(args.checkpoint)
+    manifest_path = Path(args.fleurs_manifest)
+    if not manifest_path.is_absolute():
+        manifest_path = PROJECT_ROOT / manifest_path
+    train_dataset, validation_dataset = _load_fleurs_datasets(manifest_path)
+    device = torch.device("cpu")
+    model = _create_fleurs_model(train_dataset.vocabulary, device)
+    criterion = torch.nn.CTCLoss(blank=BLANK_ID, zero_infinity=True)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        collate_fn=collate_batch,
+    )
+    validation_loader = DataLoader(
+        validation_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        collate_fn=collate_batch,
+    )
+    best_validation_loss = float("inf")
+
+    for epoch in range(1, args.epochs + 1):
+        train_loss = _fleurs_epoch(
+            model, train_loader, criterion, device, optimizer
+        )
+        validation_loss = _fleurs_epoch(
+            model, validation_loader, criterion, device
+        )
+        print(
+            f"FLEURS epoch {epoch}/{args.epochs} - "
+            f"train CTC loss: {train_loss:.4f}; "
+            f"validation CTC loss: {validation_loss:.4f}"
+        )
+        if validation_loss < best_validation_loss:
+            best_validation_loss = validation_loss
+            checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(
+                {
+                    "model_state_dict": model.state_dict(),
+                    "char_to_id": train_dataset.vocabulary.char_to_id,
+                    "n_mels": N_MELS,
+                    "blank_id": BLANK_ID,
+                    "dataset": "google/fleurs",
+                    "dataset_revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+                    "best_validation_ctc_loss": best_validation_loss,
+                },
+                checkpoint_path,
+            )
+            print(
+                f"Saved best FLEURS validation checkpoint to {checkpoint_path}"
+            )
+
+
+def run_fleurs_smoke_test(args):
+    torch.manual_seed(0)
+    manifest_path = Path(args.fleurs_manifest)
+    if not manifest_path.is_absolute():
+        manifest_path = PROJECT_ROOT / manifest_path
+    train_dataset, validation_dataset = _load_fleurs_datasets(manifest_path)
+    train_indices = _balanced_short_indices(train_dataset, samples_per_language=1)
+    validation_indices = _balanced_short_indices(
+        validation_dataset, samples_per_language=1
+    )
+    train_loader = _fleurs_loader(
+        train_dataset,
+        train_indices,
+        batch_size=len(train_indices),
+        shuffle=False,
+    )
+    validation_loader = _fleurs_loader(
+        validation_dataset,
+        validation_indices,
+        batch_size=1,
+        shuffle=False,
+    )
+    device = torch.device("cpu")
+    model = _create_fleurs_model(train_dataset.vocabulary, device)
+    criterion = torch.nn.CTCLoss(blank=BLANK_ID, zero_infinity=True)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+
+    initial_validation_loss = _fleurs_epoch(
+        model, validation_loader, criterion, device
+    )
+    train_loss = _fleurs_epoch(
+        model, train_loader, criterion, device, optimizer
+    )
+    validation_loss = _fleurs_epoch(
+        model, validation_loader, criterion, device
+    )
+
+    print(
+        "FLEURS smoke test passed: "
+        f"vocabulary_classes={len(train_dataset.vocabulary.char_to_id)}, "
+        f"model_output_classes={model.classifier.out_features}, "
+        f"train_samples={len(train_indices)} "
+        f"(en={sum(train_dataset.records[i]['language'] == 'en' for i in train_indices)}, "
+        f"te={sum(train_dataset.records[i]['language'] == 'te' for i in train_indices)}), "
+        f"validation_samples={len(validation_indices)} "
+        f"(en={sum(validation_dataset.records[i]['language'] == 'en' for i in validation_indices)}, "
+        f"te={sum(validation_dataset.records[i]['language'] == 'te' for i in validation_indices)}), "
+        f"initial_validation_ctc_loss={initial_validation_loss:.4f}, "
+        f"train_ctc_loss={train_loss:.4f}, "
+        f"validation_ctc_loss={validation_loss:.4f}. "
+        "One in-memory optimizer step completed; validation was read-only; "
+        "test split was not loaded; no checkpoint was saved."
+    )
+
+
 def check_data():
     dataset = AudioTranscriptDataset(
         PROJECT_ROOT / "data" / "transcripts" / "transcripts.csv",
@@ -472,17 +702,46 @@ def parse_args():
         action="store_true",
         help="Run real training on the CSV/audio dataset.",
     )
+    mode.add_argument(
+        "--train-fleurs",
+        action="store_true",
+        help=(
+            "Train on the FLEURS training split and monitor the validation split; "
+            "the test split is not loaded."
+        ),
+    )
+    mode.add_argument(
+        "--fleurs-smoke-test",
+        action="store_true",
+        help=(
+            "Run one balanced in-memory FLEURS optimizer step and validation "
+            "loss; no checkpoint is saved."
+        ),
+    )
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument(
+        "--fleurs-manifest",
+        default="data/fleurs/manifest.csv",
+        help="Prepared FLEURS manifest used only by FLEURS modes.",
+    )
+    parser.add_argument(
         "--checkpoint",
-        default="models/cnn_bilstm_ctc.pt",
+        default=None,
         help="Checkpoint output path (created only when real training runs).",
     )
     args = parser.parse_args()
+    if args.checkpoint is None:
+        args.checkpoint = (
+            "results/checkpoints/fleurs_cnn_bilstm_ctc.pt"
+            if args.train_fleurs
+            else "models/cnn_bilstm_ctc.pt"
+        )
     if args.epochs < 1 or args.batch_size < 1 or args.learning_rate <= 0:
         parser.error("epochs, batch-size, and learning-rate must be positive")
+    if args.fleurs_smoke_test and args.batch_size != 1:
+        parser.error("--fleurs-smoke-test uses a fixed balanced batch size")
     return args
 
 
@@ -492,6 +751,10 @@ def main():
         run_synthetic_self_test()
     elif args.check_data:
         check_data()
+    elif args.fleurs_smoke_test:
+        run_fleurs_smoke_test(args)
+    elif args.train_fleurs:
+        train_fleurs(args)
     else:
         train(args)
 

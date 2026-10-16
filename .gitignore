@@ -16,6 +16,8 @@ data/transcripts/*.wav
 data/transcripts/*.m4a
 data/transcripts/*.mp3
 data/transcripts/*.flac
+/data/fleurs/
+/data/.fleurs-preparing/
 *.wav
 *.m4a
 *.mp3

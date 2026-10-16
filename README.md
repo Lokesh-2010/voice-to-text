@@ -58,6 +58,42 @@ paths above. The CSV must use the required columns and include
 checking each pair. The four-utterance dataset is too small to train a useful
 recognizer or provide a held-out evaluation set.
 
+## FLEURS pilot data
+
+The optional FLEURS preparation utility creates a separate 200-recording-per-
+language pilot using the official train, validation, and test splits. It
+records dataset attribution and source IDs, and validates audio processing,
+transcript format, training-vocabulary coverage, and CTC frame feasibility.
+The audio and generated manifest stay local and are excluded from Git. Details
+and commands are in [docs/fleurs-dataset.md](docs/fleurs-dataset.md). The
+separate `--train-fleurs` option uses only official training rows and monitors
+validation loss; it does not load the test split.
+
+```bash
+python -m src.train --fleurs-smoke-test \
+  --fleurs-manifest data/fleurs/manifest.csv
+```
+
+### FLEURS one-epoch pilot
+
+One CPU epoch was run on the Apple M3 using all 320 pilot training recordings
+(160 English and 160 Telugu), with 40 official validation recordings (20 per
+language). The run used batch size 1 and learning rate 0.001. It completed in
+approximately 3–5 minutes; exact wall time was not captured.
+
+| Training CTC loss | Validation CTC loss | Epochs | Test split used |
+|---:|---:|---:|---|
+| 4.4810 | 3.8728 | 1 | No |
+
+The separate local checkpoint is
+`results/checkpoints/fleurs_pilot_20261016.pt`. Its 184 output classes match
+the prepared vocabulary, and the CTC blank ID is 0. Checkpoints and FLEURS
+audio/manifest files are ignored by Git and are not part of the submission.
+This one-epoch loss result is only a pipeline/training smoke pilot: there was
+no test-set prediction, CER/WER measurement, or evidence of reliable
+recognition/generalization. Do not interpret the validation loss as a
+transcription-quality score.
+
 Check local data before training:
 
 ```bash
@@ -157,10 +193,12 @@ No held-out speakers or recordings were available.
 .
 ├── requirements.txt
 ├── docs/
-│   └── architecture.md
+│   ├── architecture.md
+│   └── fleurs-dataset.md
 └── src/
     ├── audio_preprocessing.py
     ├── diagnose_prediction.py
+    ├── fleurs_dataset.py
     ├── model.py
     ├── overfit_test.py
     ├── predict.py
@@ -177,7 +215,10 @@ placeholder and is not the application entry point.
 - Four training utterances are insufficient for meaningful training of a
   reliable bilingual recognizer.
 - There is no held-out validation or test dataset, so generalization has not
-  been measured.
+  been measured for the original personal-recording model. The FLEURS pilot
+  has validation loss only; its test split has not been evaluated.
+- The FLEURS result is one epoch on 160 training recordings per language and
+  does not establish recognition quality or generalization.
 - The submission checkpoint is blank-dominated on the tested Telugu audio.
 - Exact overfitting of one sample does not imply transcription of unseen
   recordings.
