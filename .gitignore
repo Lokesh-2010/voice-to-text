@@ -1,0 +1,25 @@
+# Python environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+.Trash/
+.env
+
+# Local speech data may contain personal voice recordings and transcripts
+data/audio/
+data/transcripts/transcripts.csv
+data/transcripts/*.wav
+data/transcripts/*.m4a
+data/transcripts/*.mp3
+data/transcripts/*.flac
+*.wav
+*.m4a
+*.mp3
+*.flac
+
+# Trained and diagnostic model weights
+*.pt
+*.pth
+results/checkpoints/
