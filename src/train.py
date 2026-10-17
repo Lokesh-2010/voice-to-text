@@ -244,6 +244,29 @@ class AudioTranscriptDataset(Dataset):
         return features, target
 
 
+def assign_splits(examples):
+    """Deterministic, language-stratified train/validation/test split.
+
+    Per language, examples are sorted by filename; about 40% (at least one)
+    are held out and dealt alternately to validation and test, and the rest
+    train. No randomness is involved.
+    """
+    splits = {"train": [], "validation": [], "test": []}
+    held_out_names = ("validation", "test")
+    turn = 0
+    for language in sorted({example[1] for example in examples}):
+        group = sorted(
+            (example for example in examples if example[1] == language),
+            key=lambda example: example[0],
+        )
+        held_out = max(1, round(len(group) * 0.4))
+        splits["train"].extend(group[: len(group) - held_out])
+        for example in group[len(group) - held_out :]:
+            splits[held_out_names[turn % 2]].append(example)
+            turn += 1
+    return splits
+
+
 def collate_batch(batch):
     feature_sequences, targets = zip(*batch)
     input_lengths = torch.tensor(
@@ -332,11 +355,20 @@ def train(args):
         PROJECT_ROOT / "data" / "audio",
         require_verified=True,
     )
+    splits = assign_splits(dataset.examples)
+    dataset.examples = splits["train"]
+    dataset.language_counts = {}
+    for _, language, _, _ in dataset.examples:
+        dataset.language_counts[language] = dataset.language_counts.get(language, 0) + 1
+    print(
+        "Split (train/validation/test): "
+        + ", ".join(f"{name}={[e[0] for e in splits[name]]}" for name in splits)
+    )
     missing_languages = SUPPORTED_LANGUAGES - set(dataset.language_counts)
     if missing_languages:
         raise ValueError(
-            "Bilingual training requires verified samples for both 'en' and 'te'; "
-            f"missing: {', '.join(sorted(missing_languages))}"
+            "Bilingual training requires verified training samples for both "
+            f"'en' and 'te'; missing: {', '.join(sorted(missing_languages))}"
         )
     loader = DataLoader(
         dataset,
@@ -387,6 +419,7 @@ def train(args):
             "char_to_id": vocabulary.char_to_id,
             "n_mels": N_MELS,
             "blank_id": BLANK_ID,
+            "train_files": [example[0] for example in dataset.examples],
         },
         checkpoint_path,
     )

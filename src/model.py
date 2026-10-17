@@ -14,7 +14,9 @@ class CNNBiLSTM(nn.Module):
     ):
         super().__init__()
 
-        # CNN learns patterns from audio features
+        # CNN learns patterns from audio features. GroupNorm has no running
+        # statistics, so train and eval behave identically even though clips
+        # are processed one at a time (BatchNorm broke inference).
         self.cnn = nn.Sequential(
             nn.Conv1d(
                 in_channels=n_mels,
@@ -22,7 +24,7 @@ class CNNBiLSTM(nn.Module):
                 kernel_size=5,
                 padding=2
             ),
-            nn.BatchNorm1d(cnn_channels),
+            nn.GroupNorm(1, cnn_channels),
             nn.ReLU(),
 
             nn.Conv1d(
@@ -31,7 +33,7 @@ class CNNBiLSTM(nn.Module):
                 kernel_size=3,
                 padding=1
             ),
-            nn.BatchNorm1d(cnn_channels),
+            nn.GroupNorm(1, cnn_channels),
             nn.ReLU()
         )
 
