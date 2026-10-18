@@ -4,8 +4,15 @@ from pathlib import Path
 
 import torch
 
-from .audio_preprocessing import extract_mel_spectrogram, load_audio
-from .predict import greedy_ctc_decode, load_model
+if __package__:
+    from .audio_preprocessing import extract_mel_spectrogram, load_audio
+    from .predict import greedy_ctc_decode, load_model
+else:
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from src.audio_preprocessing import extract_mel_spectrogram, load_audio
+    from src.predict import greedy_ctc_decode, load_model
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

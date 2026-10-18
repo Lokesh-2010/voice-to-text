@@ -3,10 +3,19 @@ from pathlib import Path
 
 import torch
 
-from .model import CNNBiLSTM
-from .predict import greedy_ctc_decode, load_model, predict
-from .train import AudioTranscriptDataset, BLANK_ID
-from .audio_preprocessing import N_MELS
+if __package__:
+    from .model import CNNBiLSTM
+    from .predict import greedy_ctc_decode, load_model, predict
+    from .train import AudioTranscriptDataset, BLANK_ID
+    from .audio_preprocessing import N_MELS
+else:
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from src.model import CNNBiLSTM
+    from src.predict import greedy_ctc_decode, load_model, predict
+    from src.train import AudioTranscriptDataset, BLANK_ID
+    from src.audio_preprocessing import N_MELS
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

@@ -4,8 +4,15 @@ from pathlib import Path
 
 import torch
 
-from .predict import greedy_ctc_decode, load_model
-from .train import AudioTranscriptDataset, assign_splits
+if __package__:
+    from .predict import greedy_ctc_decode, load_model
+    from .train import AudioTranscriptDataset, assign_splits
+else:
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from src.predict import greedy_ctc_decode, load_model
+    from src.train import AudioTranscriptDataset, assign_splits
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 

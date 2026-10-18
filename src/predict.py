@@ -1,11 +1,30 @@
 import argparse
+import warnings
 from pathlib import Path
 
 import torch
 
-from .audio_preprocessing import N_MELS, extract_mel_spectrogram, load_audio
-from .model import CNNBiLSTM
-from .train import BLANK_ID, BLANK_TOKEN
+if __package__:
+    from .audio_preprocessing import N_MELS, extract_mel_spectrogram, load_audio
+    from .model import CNNBiLSTM
+    from .train import BLANK_ID, BLANK_TOKEN
+else:
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from src.audio_preprocessing import N_MELS, extract_mel_spectrogram, load_audio
+    from src.model import CNNBiLSTM
+    from src.train import BLANK_ID, BLANK_TOKEN
+
+DEFAULT_CHECKPOINT = (
+    Path(__file__).resolve().parent.parent
+    / "models"
+    / "cnn_bilstm_ctc_groupnorm_14clips_700ep.pt"
+)
+
+# librosa's m4a fallback emits noisy deprecation warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="librosa")
+warnings.filterwarnings("ignore", category=FutureWarning, module="librosa")
 
 
 def greedy_ctc_decode(token_ids, id_to_char, blank_id=BLANK_ID):
@@ -105,22 +124,39 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Greedy CTC decoding for a trained CNN-BiLSTM checkpoint."
     )
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument(
+    parser.add_argument(
+        "audio_path",
+        nargs="?",
+        help="Path to an audio file to transcribe (wav, m4a, mp3, flac).",
+    )
+    parser.add_argument(
+        "--audio",
+        dest="audio_option",
+        help="Same as the positional audio path.",
+    )
+    parser.add_argument(
         "--self-test",
         action="store_true",
         help="Test CTC decoding with synthetic token IDs; no files or model needed.",
     )
-    mode.add_argument(
-        "--audio",
-        help="Path to a real audio file to decode using a trained checkpoint.",
-    )
     parser.add_argument(
         "--checkpoint",
-        default="models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt",
+        default=str(DEFAULT_CHECKPOINT),
         help="Path to the checkpoint created by src.train.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--reference",
+        help="Optional expected transcription; prints WER and CER against it.",
+    )
+    args = parser.parse_args()
+    if args.self_test:
+        return args
+    if args.audio_path and args.audio_option:
+        parser.error("give the audio file either positionally or with --audio, not both")
+    args.audio = args.audio_path or args.audio_option
+    if not args.audio:
+        parser.error("an audio file path is required unless --self-test is used")
+    return args
 
 
 def main():
@@ -129,8 +165,20 @@ def main():
         run_synthetic_self_test()
         return
 
-    transcript = predict(args.audio, args.checkpoint)
-    print(f"Greedy CTC output (unverified): {transcript}")
+    try:
+        transcript = predict(args.audio, args.checkpoint)
+    except (FileNotFoundError, ValueError) as error:
+        raise SystemExit(f"Error: {error}")
+    print(f"Audio      : {args.audio}")
+    print(f"Prediction : {transcript}")
+    if args.reference is not None:
+        if __package__:
+            from .evaluate import error_counts
+        else:
+            from src.evaluate import error_counts
+        w, wn, c, cn = error_counts(args.reference, transcript)
+        print(f"Reference  : {args.reference}")
+        print(f"WER {w / max(wn, 1):.3f} ({w}/{wn})  CER {c / max(cn, 1):.3f} ({c}/{cn})")
 
 
 if __name__ == "__main__":
