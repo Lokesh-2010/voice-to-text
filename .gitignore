@@ -1,15 +1,24 @@
 # Python environments and generated files
 .venv/
+.venv-*/
 venv/
+env/
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
 .DS_Store
 .Trash/
 .env
+.vscode/
+*.log
+!results/english_prediction.log
+*.tmp
+*.swp
+/tmp/
 
-# Local speech data may contain personal voice recordings and transcripts
+# Local speech data may contain personal voice recordings
 data/audio/
-data/transcripts/transcripts.csv
 data/transcripts/*.wav
 data/transcripts/*.m4a
 data/transcripts/*.mp3
@@ -19,7 +28,17 @@ data/transcripts/*.flac
 *.mp3
 *.flac
 
+# Independent test references must stay out of the repository
+data/transcripts/heldout.csv
+
+# Unrelated local files and folders
+untitled folder/
+gitignore
+main.py
+
 # Trained and diagnostic model weights
 *.pt
 *.pth
 results/checkpoints/
+# The single final checkpoint (about 3 MB: weights and vocabulary only)
+!models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt

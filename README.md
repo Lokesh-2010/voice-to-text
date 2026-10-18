@@ -1,287 +1,258 @@
-# English–Telugu Speech-to-Text
+# Bilingual English–Telugu Speech-to-Text
 
-A small character-level speech recognition project for English (`en`) and
-Telugu (`te`). It uses a CNN-BiLSTM acoustic model trained with
-Connectionist Temporal Classification (CTC), and greedy CTC decoding at
-inference time.
+## Objective
 
-> **Current status:** this is a prototype, not a production-ready recognizer.
-> The dataset contains only **four verified recordings** (two English, two
-> Telugu, about 15 seconds in total). A checkpoint trained on them reproduces
-> its own training sentences, but it **does not generalize**: on a new English
-> sentence it recognized 0 of 12 words. The results below demonstrate that the
-> preprocessing, training, decoding and evaluation pipeline works end to end.
-> They are not evidence of transcription accuracy on unseen speech. The source
-> repository does not include recordings, transcripts or model weights.
+Build and evaluate a small character-level speech recognizer for English (`en`)
+and Telugu (`te`) using Python, PyTorch, a CNN-BiLSTM acoustic model and
+Connectionist Temporal Classification (CTC) loss.
+
+> **Honest status:** the model fits the 14 recordings it was trained on
+> (training CER 0.004) but **does not generalize to new speech yet**: on two
+> independent held-out recordings, WER is 1.00 and CER is 0.83. This is a
+> working prototype of the full pipeline (preprocessing, training, decoding,
+> evaluation), not a usable recognizer.
 
 ## Architecture
 
 `src/model.py` defines `CNNBiLSTM`:
 
-1. Input log-Mel features have shape `[batch, 80, time]`.
-2. Two stride-1, padded 1D convolution blocks (Conv1d, GroupNorm, ReLU)
-   produce 128 channels while preserving the number of time steps. GroupNorm
-   (one group) replaced BatchNorm because the model runs one clip at a time:
-   BatchNorm used per-clip statistics in training but mismatched running
-   averages at inference, which broke predictions. GroupNorm behaves
-   identically in training and inference. Checkpoints trained with the
-   earlier BatchNorm version cannot be loaded.
-3. A two-layer, bidirectional LSTM with 128 hidden units per direction models
-   the sequence.
-4. A linear layer emits per-frame logits over the character vocabulary,
-   including the CTC blank token.
+1. Input: log-Mel features of shape `[batch, 80, time]`.
+2. Two 1D convolution blocks (Conv1d, GroupNorm, ReLU) with 128 channels.
+   GroupNorm replaced BatchNorm because clips are processed one at a time.
+   Older BatchNorm checkpoints are detected by `src.predict` and loaded
+   through a legacy `normalization="batch"` option (inference only).
+3. A two-layer bidirectional LSTM, 128 hidden units per direction.
+4. A linear layer over the character vocabulary plus the CTC blank (ID 0).
 
-`src/audio_preprocessing.py` loads mono audio at 16 kHz and calculates 80-bin
-Mel spectrograms, followed by a natural logarithm. Transcripts are NFC Unicode
-normalized and represented as individual characters. The blank symbol
-`<blank>` has ID 0. Training uses `torch.nn.CTCLoss`; inference uses greedy
-argmax followed by CTC blank removal and repeated-token collapse.
+Training uses `torch.nn.CTCLoss`. Inference uses greedy argmax, collapses
+repeated tokens and removes blanks. There is no language model or beam search.
 
-## Requirements and setup
+## Audio preprocessing
 
-The pinned direct dependencies were validated in a Python 3.9 environment on
-macOS. PyTorch and torchaudio should use matching versions.
+`src/audio_preprocessing.py` loads audio as **16 kHz mono** and computes an
+80-bin Mel spectrogram followed by a natural log. Recordings are stored as
+16 kHz mono WAV. On macOS, `.m4a` files can be converted with the built-in
+`afconvert` (no FFmpeg needed):
+
+```bash
+afconvert data/audio/english_01.wav.m4a data/audio/english_01.wav \
+  -f WAVE -d LEI16@16000 -c 1
+```
+
+Transcripts are NFC-normalized and split into individual characters.
+
+## Dataset
+
+Local data (recordings and held-out references are not published; see Data privacy):
+
+```text
+data/
+├── audio/                      # recordings
+└── transcripts/
+    ├── transcripts.csv         # TRAINING rows (verified)
+    └── heldout.csv             # independent test references (never trained on)
+```
+
+- **Training: 14 recordings, 7 English and 7 Telugu**, a few seconds each, from
+  one speaker. The 70-token character vocabulary is built from these
+  transcripts only.
+- **Public copy of the data files:** the 14-recording model was trained on the
+  full local transcript file. To avoid publishing personal details (the
+  speaker's name and place names), the committed `transcripts.csv` lists only
+  the 7 non-personal rows, and the checkpoint's stored `train_files` list has
+  those filenames replaced by `redacted_clip`. The weights are unchanged; the
+  model has still memorized the full training set, including the redacted
+  sentences.
+- **Independent test: 2 recordings**, `english_05.wav` and `telugu_05.wav`,
+  referenced only in `heldout.csv`.
+- `transcripts.csv` columns: `audio_file`, `language`, `transcript`,
+  `audio_verified`, `transcript_verified`. The verification flags mean a person
+  confirmed the audio and the transcript; the tools cannot check that.
+
+## Setup
+
+Python 3.9, macOS (the pinned versions were validated there):
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt   # librosa, torch, torchaudio
 ```
 
-## Dataset
+## Quick start after cloning
 
-The training loader expects local data at:
+The trained checkpoint is included in the repository
+(`models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt`, about 3 MB; weights and
+vocabulary only), so no download is needed. The training recordings are
+**not** published, so you must supply your own 16 kHz mono WAV file:
 
-```text
-data/
-├── audio/
-│   └── <audio files>
-└── transcripts/
-    └── transcripts.csv
+```bash
+python -m src.predict --self-test                 # no audio needed
+python -m src.predict --audio path/to/your_clip.wav
 ```
 
-The CSV requires the columns `audio_file`, `language`, and `transcript`. The
-optional `audio_verified` and `transcript_verified` columns are required for
-training: each must be set to `true` only after a person has checked that the
-audio is usable and its transcript matches what was spoken. Supported language
-codes are `en` and `te`. `audio_file` should be a filename located directly
-under `data/audio/`.
-
-The local dataset has four rows, two per language, and all referenced audio
-loads successfully. The dataset verifier checks file existence, readability,
-language codes, and verification flags; it cannot confirm that the spoken
-content matches the transcript. Add substantially more varied, manually
-checked recordings before interpreting model quality.
-
-### Train / validation / test split
-
-`assign_splits()` in `src/train.py` splits the verified rows deterministically
-(no randomness) and per language: rows are sorted by filename, about 40% of
-each language (at least one row) is held out, and the held-out rows are dealt
-alternately to validation and test. With the current four rows the split is:
-
-| Split | Recordings |
-|---|---|
-| train | `Tirmanpalli Bheemgal Road.wav` (en), `enlish_sample.m4a` (te) |
-| validation | `english_sample_2.wav.m4a` (en) |
-| test | `telugu_sample_2.wav.m4a` (te) |
-
-`--train` trains only on the train split and stores the list of training
-files in the checkpoint. The vocabulary is still built from all verified
-transcripts, so characters that occur only in held-out rows are in the output
-set even though the model never saw them in training.
-
-Local recordings, transcript CSVs, and model weight files are excluded by
-`.gitignore` to reduce accidental publication of personal data and generated
-artifacts. Obtain permission before sharing any voice recordings or
-transcripts. Provide your own local data using the layout above.
+Expect sensible output only for the original 14 training sentences recorded by
+the original speaker. For other speech, accuracy is **not reliable yet** (see
+Evaluation). Retraining needs your own recordings plus rows in
+`data/transcripts/transcripts.csv`; the commands below show how.
 
 ## Validate the dataset
-
-From the project root, with the virtual environment active:
 
 ```bash
 python -m src.verify_dataset
 python -m src.train --check-data
 ```
 
-`verify_dataset` checks the CSV structure, supported labels, file references,
-and verification flags. `--check-data` additionally attempts to load and
-preprocess audio without starting training.
-
 ## Train
 
-Training refuses to overwrite an existing checkpoint. Use a new path for each
-run. The default of 100 epochs is too few for this dataset (loss stays near the
-blank-only plateau); a 700-epoch run on all four clips reached a mean CTC loss
-of about 0.04:
+Training refuses to overwrite an existing checkpoint; use a new path each run.
+`--use-all-data` trains on every row of `transcripts.csv` (no validation/test
+hold-out), which is how the 14-recording checkpoint was produced:
 
 ```bash
-python -m src.train --train \
-  --epochs 700 \
-  --batch-size 1 \
-  --learning-rate 0.001 \
-  --checkpoint models/my_run.pt
+python -m src.train --train --use-all-data \
+  --epochs 700 --batch-size 1 --learning-rate 0.001 \
+  --checkpoint models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt
 ```
 
-The script prints the train/validation/test split and the mean CTC loss each
-epoch, and saves the model state together with its character vocabulary,
-Mel-bin count, blank ID, and training-file list. Trained weights (`*.pt`) are
-git-ignored. Lower training loss or exact training-set transcription should
-not be interpreted as held-out accuracy.
+Without `--use-all-data`, `assign_splits()` holds out about 40% of each
+language for validation and test.
+
+**Result:** 700 epochs, final mean CTC loss **0.0200** (10.77 at epoch 1).
+The loss was not monotonic (for example 0.25 at epoch 500), so the final
+weights are not perfectly settled.
+
+Saved checkpoint: `models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt`
+(vocabulary, 80 Mel bins, blank ID and training file list are stored inside).
 
 ## Predict
 
-Pass the checkpoint explicitly. The default, `models/cnn_bilstm_ctc.pt`, is an
-old BatchNorm checkpoint that no longer loads:
+The default checkpoint is the final 14-clip model; `--checkpoint` overrides it:
 
 ```bash
+python -m src.predict --audio data/audio/english_02.wav
 python -m src.predict \
-  --audio data/audio/telugu_sample_2.wav.m4a \
-  --checkpoint models/my_run.pt
+  --audio data/audio/english_02.wav \
+  --checkpoint models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt
 ```
-
-The prediction printed by the CLI is an unverified greedy decode. Greedy
-decoding can return an empty string if blank is the highest-scoring class at
-every frame.
 
 ## Evaluate (WER and CER)
 
-`src/evaluate.py` decodes each split with a checkpoint and reports per-clip and
-corpus word error rate (WER, word-level edit distance) and character error
-rate (CER, character-level edit distance) on NFC-normalized text:
+`src/evaluate.py` scores the splits defined by `assign_splits()` and prints
+`NOT INDEPENDENT` for any clip the checkpoint was trained on:
 
 ```bash
-python -m src.evaluate --checkpoint models/my_run.pt            # all splits
-python -m src.evaluate --checkpoint models/my_run.pt --split test
+python -m src.evaluate \
+  --checkpoint models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt --split all
 ```
 
-Any clip that the checkpoint was trained on is labeled `SEEN IN TRAINING` and
-the split is reported as `NOT INDEPENDENT`. Checkpoints that do not record
-their training files are treated as having seen every clip.
+The held-out recordings are scored by running real predictions and comparing
+them with `data/transcripts/heldout.csv`:
+
+```python
+import csv
+from src.predict import predict
+from src.evaluate import error_counts
+
+CKPT = "models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt"
+for row in csv.DictReader(open("data/transcripts/heldout.csv", encoding="utf-8")):
+    hyp = predict("data/audio/" + row["audio_file"], CKPT)
+    we, wt, ce, ct = error_counts(row["transcript"], hyp)
+    print(row["audio_file"], hyp, f"WER {we}/{wt} CER {ce}/{ct}")
+```
 
 ## Results
 
-### Familiar-sentence demonstrations (not independent accuracy)
+Checkpoint: `cnn_bilstm_ctc_groupnorm_14clips_700ep.pt`.
 
-These outputs come from `results/inference_demo.md`, generated with
-`src.predict` and the 700-epoch GroupNorm checkpoint
-`models/cnn_bilstm_ctc_groupnorm_700ep.pt`, which was trained on **all four**
-recordings. Every clip below was in its training data, so the matches show
-memorization, not recognition of new speech. The reference is the verified
-transcript from the CSV; the prediction is model output.
+### Training recordings (seen in training, not independent)
 
-| Language | Audio | Reference | Prediction | Exact match |
+| Metric | Value |
+|---|---|
+| Exact matches | 12 of 14 |
+| WER | 2/83 = 0.024 |
+| CER | 2/518 = **0.004** |
+
+Examples (exact matches):
+
+| Clip | Expected = predicted |
+|---|---|
+| `english_02.wav` | Today I am learning Python programming. |
+| `telugu_03.wav` | నాకు తెలుగు భాష అంటే చాలా ఇష్టం. |
+
+The two imperfect clips differ by one character each: `speech-totext` for
+`speech-to-text`, and `నివసిస్తన్నాను` for `నివసిస్తున్నాను`.
+
+### Independent held-out recordings (never used for training)
+
+| Clip | Expected | Predicted | WER | CER |
 |---|---|---|---|---|
-| English | `english_sample_2.wav.m4a` | My name is Lokesh. Today I am testing my speech recognition model. | My name is Lokesh. Today I am testing my speech recognition model. | yes |
-| English | `Tirmanpalli Bheemgal Road.wav` | Hello, how are you? Today I am learning speech-to-text. | Hello, how are you? Today I am learning speeto-text. | no |
-| Telugu | `telugu_sample_2.wav.m4a` | నా పేరు లోకేష్. ఈ రోజు నా స్పీచ్ రికగ్నిషన్ మోడల్‌ను పరీక్షిస్తున్నాను. | నా పేరు లోకేష్. ఈ రోజు నా స్పీచ్ రికగ్నిషన్ మోడల్‌ను పరీక్షిస్తున్నాను. | yes |
-| Telugu | `enlish_sample.m4a` | మీరు ఎలా ఉన్నారు? | మీరు ఎలా ఉన్నారు? | yes |
+| `english_05.wav` | I enjoy playing cricket with my friends. | `Hel  అsపే amespuetearnui srigeinoith.` | 7/7 | 34/40 = 0.85 |
+| `telugu_05.wav` | ఈ రోజు వాతావరణం చాలా బాగుంది. | `నేను హైదర వువటుదాన్నాను.` | 5/5 | 23/29 = 0.79 |
+| **Combined** | | | **1.00** | **0.83** |
 
-3 of 4 clips match exactly. The one error drops "ch" from "speech".
+No word was recognized on either clip. The output mixes scripts and reuses
+fragments of training sentences.
 
-### Unseen sentence
+## What this means
 
-The same checkpoint was run on a new English recording (not in the dataset,
-spoken sentence: "The weather is beautiful today and I want to learn
-something new."). The output was
-`M లే ోక్ ోడల్్ లోక్ ప్  మక్ మnిస్ిస్నాను.`: 0 of 12 words correct (CER 0.86,
-WER 1.00), mostly Telugu characters and fragments of the training sentences.
-This is the realistic indication of the current model's ability on new speech.
+The model **fits its training recordings but does not generalize to new
+speech.** Fourteen short clips from one speaker are enough to memorize the
+sentences, not to learn to recognize new words. Only the held-out numbers
+above reflect unseen-speech accuracy.
 
-### WER/CER on the splits
+Vocabulary limitation: the vocabulary contains only characters that occur in
+the training transcripts, so the model cannot output any other character. The
+held-out sentences need two characters it lacks: `j` ("enjoy") and `ణ`
+(U+0C23, in "వాతావరణం"). This adds guaranteed errors, but the failure is
+nearly total even without it.
 
-`python -m src.evaluate` was run on the 700-epoch checkpoint above, but that
-checkpoint trained on all four clips, so its validation and test scores
-(WER 0.000, CER 0.000 on one clip each) are **not independent** and are not
-reported as accuracy. No independent WER/CER has been measured. Obtaining it
-requires training on the train split only and evaluating on the held-out
-clips, and even then each split holds a single recording, which is far too
-little for a meaningful estimate.
-
-### `results/english_prediction.log` is outdated
-
-`results/english_prediction.log` contains `M.`. It is the output of an earlier,
-under-trained checkpoint (`results/checkpoints/submission.pt`, about 100
-epochs) that emitted blank almost everywhere and printed only a first and last
-character. It does not reflect the current model, and that checkpoint cannot
-be loaded by the current code. Use `results/inference_demo.md` for current
-outputs.
-
-## Diagnostics and tests
-
-Inspect frame-level predictions for an audio/checkpoint pair:
-
-```bash
-python -m src.diagnose_prediction \
-  --checkpoint models/my_run.pt \
-  --audio data/audio/telugu_sample_2.wav.m4a
-```
-
-Run synthetic CTC/model checks:
-
-```bash
-python -m src.train --self-test
-python -m src.predict --self-test
-```
-
-The training self-test checks output shapes, CTC loss, and backward propagation.
-The prediction self-test checks CTC repeated-token and blank handling.
-
-An optional single-utterance overfit test trains only on one verified row,
-stops at an exact greedy match (or after the step limit), and writes a new
-checkpoint only if its output path does not already exist:
-
-```bash
-python -m src.overfit_test \
-  --audio-file enlish_sample.m4a \
-  --checkpoint results/checkpoints/overfit_test.pt
-```
-
-The overfit test is a debugging aid only; it demonstrates that the model can
-memorize one clip, which says nothing about generalization.
-
-## Limitations
-
-- **Only four verified recordings** (two English, two Telugu, about 15 seconds)
-  exist. This is not enough data to train a usable English–Telugu recognizer.
-- **The model does not generalize.** It reproduces its training sentences but
-  failed on a new English sentence (0 of 12 words correct, CER 0.86).
-- **No independent accuracy has been measured.** The only retained checkpoint
-  that works was trained on all four clips, so its WER/CER on any split is not
-  independent. Each split contains a single recording, so even a properly
-  held-out score would have no statistical meaning.
-- The 3-of-4 exact matches in the demonstration are on training clips.
-- Old checkpoints (`results/checkpoints/*.pt`, most of `models/*.pt`) were
-  trained with BatchNorm and cannot be loaded by the current GroupNorm model.
-- The model is character-level and uses greedy decoding only; no language model,
-  beam search, normalization beyond NFC, or punctuation post-processing is
-  included.
-- Verification flags and file checks do not establish transcript accuracy;
-  each audio/transcript pair should be reviewed by a fluent speaker. A
-  language-ID check agreed with the labels, but the Telugu sample had only
-  about 49% confidence.
-- Training is CPU-based and unseeded, so repeated runs give slightly different
-  results; runtime grows with audio length and the number of epochs.
-
-## Project layout
+## Project structure
 
 ```text
 src/
-├── audio_preprocessing.py
-├── diagnose_prediction.py
-├── evaluate.py
-├── model.py
-├── overfit_test.py
-├── predict.py
-├── train.py
-└── verify_dataset.py
-data/
-├── audio/                 # local, ignored recordings
-└── transcripts/           # local, ignored transcript CSV
-models/                    # checkpoints (*.pt are git-ignored)
-results/
-├── inference_demo.md      # current English/Telugu demonstration outputs
-└── english_prediction.log # OUTDATED: "M." from an earlier checkpoint
+├── audio_preprocessing.py    # 16 kHz mono loading, log-Mel features
+├── model.py                  # CNNBiLSTM
+├── train.py                  # dataset, vocabulary, CTC training
+├── predict.py                # checkpoint loading, greedy CTC decoding
+├── evaluate.py               # WER/CER
+├── verify_dataset.py         # CSV/audio checks
+├── diagnose_prediction.py    # frame-level prediction inspection
+└── overfit_test.py           # single-clip memorization debugging aid
+data/                         # recordings are local and git-ignored; transcripts.csv is included
+models/                       # only the final checkpoint is tracked (other *.pt are git-ignored)
+results/inference_demo.md     # 2 training + 2 unseen clips (unseen ones fail)
+results/english_prediction.log  # raw src.predict CLI output for those 4 clips
+requirements.txt
 ```
+
+Checkpoint location: `models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt`.
+Earlier checkpoints in `models/` (`cnn_bilstm_ctc_groupnorm_700ep.pt`,
+`cnn_bilstm_ctc_groupnorm_targets_700ep.pt`) were trained on 4 and 6 clips.
+
+Self-tests that need no data: `python -m src.train --self-test`,
+`python -m src.predict --self-test`, `python -m src.evaluate --self-test`.
+
+## Data privacy
+
+Voice recordings (`data/audio/`), the held-out references
+(`data/transcripts/heldout.csv`) and all model weights except the final
+checkpoint are excluded by `.gitignore`. The training transcript file
+`data/transcripts/transcripts.csv` and the ~3 MB final checkpoint
+`models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt` (weights and vocabulary
+only, no audio) are included. Because the audio is not published, the training
+data cannot be reproduced without your own recordings. Obtain permission before
+sharing voice recordings.
+
+## Future improvements
+
+- **Larger dataset:** many more hours of varied, manually verified speech.
+- **More speakers:** different voices, accents, microphones and noise levels.
+- **Vocabulary coverage:** train on text covering the full English alphabet and
+  Telugu character set so no character is unreachable.
+- **Better generalization:** data augmentation, a held-out validation split
+  with early stopping, a lower learning rate or scheduler to avoid late loss
+  spikes, a larger or pretrained acoustic model, and beam search with a
+  language model.
+- **Evaluation:** a proper train/validation/test protocol with several
+  held-out speakers instead of two clips.

@@ -356,6 +356,9 @@ def train(args):
         require_verified=True,
     )
     splits = assign_splits(dataset.examples)
+    if args.use_all_data:
+        # Every verified clip trains; the evaluator marks all of them NOT INDEPENDENT.
+        splits = {"train": list(dataset.examples), "validation": [], "test": []}
     dataset.examples = splits["train"]
     dataset.language_counts = {}
     for _, language, _, _ in dataset.examples:
@@ -508,6 +511,11 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument(
+        "--use-all-data",
+        action="store_true",
+        help="Train on every verified clip instead of holding out validation/test.",
+    )
     parser.add_argument(
         "--checkpoint",
         default="models/cnn_bilstm_ctc.pt",

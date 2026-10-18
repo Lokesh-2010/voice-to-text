@@ -65,8 +65,18 @@ def load_model(checkpoint_path):
         raise ValueError("Checkpoint character IDs must be contiguous from zero")
     id_to_char = {token_id: character for character, token_id in char_to_id.items()}
 
-    model = CNNBiLSTM(n_mels=n_mels, vocab_size=len(char_to_id))
-    model.load_state_dict(checkpoint["model_state_dict"])
+    state_dict = checkpoint["model_state_dict"]
+    normalization = (
+        "batch"
+        if any(key.endswith(".running_mean") for key in state_dict)
+        else "group"
+    )
+    model = CNNBiLSTM(
+        n_mels=n_mels,
+        vocab_size=len(char_to_id),
+        normalization=normalization,
+    )
+    model.load_state_dict(state_dict)
     model.eval()
     return model, id_to_char, blank_id
 
@@ -107,7 +117,7 @@ def parse_args():
     )
     parser.add_argument(
         "--checkpoint",
-        default="models/cnn_bilstm_ctc.pt",
+        default="models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt",
         help="Path to the checkpoint created by src.train.",
     )
     return parser.parse_args()

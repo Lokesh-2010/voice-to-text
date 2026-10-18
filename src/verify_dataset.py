@@ -11,9 +11,7 @@ VERIFICATION_COLUMNS = ("audio_verified", "transcript_verified")
 ALLOWED_COLUMNS = (*REQUIRED_COLUMNS, *VERIFICATION_COLUMNS)
 SUPPORTED_LANGUAGES = {"en", "te"}
 AUDIO_EXTENSIONS = {".wav", ".m4a", ".mp3", ".flac"}
-ALTERNATE_AUDIO_FILES = {
-    "Tirmanpalli Bheemgal Road.m4a": "Tirmanpalli Bheemgal Road.wav",
-}
+ALTERNATE_AUDIO_FILES = {}
 
 
 def main():

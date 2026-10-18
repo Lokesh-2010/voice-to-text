@@ -3,6 +3,15 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, pad_sequence
 
+
+def _normalization_layer(kind, channels):
+    if kind == "batch":
+        return nn.BatchNorm1d(channels)
+    if kind == "group":
+        return nn.GroupNorm(1, channels)
+    raise ValueError("normalization must be 'batch' or 'group'")
+
+
 class CNNBiLSTM(nn.Module):
     def __init__(
         self,
@@ -10,13 +19,15 @@ class CNNBiLSTM(nn.Module):
         cnn_channels=128,
         hidden_size=128,
         num_layers=2,
-        vocab_size=100
+        vocab_size=100,
+        normalization="group",
     ):
         super().__init__()
 
         # CNN learns patterns from audio features. GroupNorm has no running
         # statistics, so train and eval behave identically even though clips
-        # are processed one at a time (BatchNorm broke inference).
+        # are processed one at a time. BatchNorm remains available for older
+        # checkpoints that were trained with running-statistics normalization.
         self.cnn = nn.Sequential(
             nn.Conv1d(
                 in_channels=n_mels,
@@ -24,7 +35,7 @@ class CNNBiLSTM(nn.Module):
                 kernel_size=5,
                 padding=2
             ),
-            nn.GroupNorm(1, cnn_channels),
+            _normalization_layer(normalization, cnn_channels),
             nn.ReLU(),
 
             nn.Conv1d(
@@ -33,7 +44,7 @@ class CNNBiLSTM(nn.Module):
                 kernel_size=3,
                 padding=1
             ),
-            nn.GroupNorm(1, cnn_channels),
+            _normalization_layer(normalization, cnn_channels),
             nn.ReLU()
         )
 

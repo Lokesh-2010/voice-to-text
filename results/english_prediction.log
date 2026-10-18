@@ -1,0 +1,14 @@
+# Real CLI output: python -m src.predict --audio <wav> --checkpoint models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt
+# Generated 2026-10-18 09:06
+
+$ python -m src.predict --audio data/audio/english_02.wav --checkpoint models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt
+Greedy CTC output (unverified): Today I am learning Python programming.
+
+$ python -m src.predict --audio data/audio/telugu_02.wav --checkpoint models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt
+Greedy CTC output (unverified): నేను ఈ రోజు చదువుకుంటున్నాను.
+
+$ python -m src.predict --audio data/audio/english_05.wav --checkpoint models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt
+Greedy CTC output (unverified): Hel  అsపే amespuetearnui srigeinoith.
+
+$ python -m src.predict --audio data/audio/telugu_05.wav --checkpoint models/cnn_bilstm_ctc_groupnorm_14clips_700ep.pt
+Greedy CTC output (unverified): నేను హైదర వువటుదాన్నాను.
