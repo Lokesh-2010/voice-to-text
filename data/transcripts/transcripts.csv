@@ -1,0 +1,8 @@
+audio_file,language,transcript,audio_verified,transcript_verified
+enlish_sample.m4a,te,మీరు ఎలా ఉన్నారు?,true,true
+english_target.wav,en,"Good morning, how are you?",true,true
+telugu_target.wav,te,"నమస్కారం, మీరు ఎలా ఉన్నారు?",true,true
+english_02.wav,en,"Today I am learning Python programming.",true,true
+english_03.wav,en,"I am building a speech recognition module.",true,true
+telugu_02.wav,te,"నేను ఈ రోజు చదువుకుంటున్నాను.",true,true
+telugu_03.wav,te,"నాకు తెలుగు భాష అంటే చాలా ఇష్టం.",true,true
