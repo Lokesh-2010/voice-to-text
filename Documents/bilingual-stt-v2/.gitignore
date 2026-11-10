@@ -1,0 +1,10 @@
+/.venv/
+/.venv-whisper/
+.DS_Store
+__pycache__/
+*.py[cod]
+/.cache/whisper/
+/models/*.pt
+*.tmp
+*.temp
+/models/.checkpoint-*
