@@ -1,0 +1,33 @@
+audio_path,language,transcript,split
+data/audio/english/english_new_01.wav,english,I am developing a speech recognition project.,train
+data/audio/english/english_new_02.wav,english,Python is useful for machine learning.,test
+data/audio/telugu/telugu_new_01.wav,telugu,నేను స్పీచ్ రికగ్నిషన్ ప్రాజెక్ట్ చేస్తున్నాను.,train
+data/audio/telugu/telugu_new_02.wav,telugu,ఈ రోజు నేను కొత్త విషయాలు నేర్చుకుంటున్నాను.,val
+data/audio/english/english_03_new.wav,english,Today I am working on my machine learning project.,val
+data/audio/english/english_04_new.wav,english,Speech recognition converts spoken words into text.,train
+data/audio/telugu/telugu_03_new.wav,telugu,నేను ఈ రోజు కొత్త ప్రాజెక్ట్ చేస్తున్నాను.,train
+data/audio/telugu/telugu_04_new.wav,telugu,నాకు తెలుగు భాష అంటే చాలా ఇష్టం.,test
+data/audio/english/english_05_new.wav,english,My computer is processing audio signals.,train
+data/audio/english/english_06_new.wav,english,I want to improve my programming skills.,train
+data/audio/telugu/telugu_05_new.wav,telugu,నేను ప్రతిరోజూ కొత్త విషయాలు నేర్చుకుంటాను.,train
+data/audio/telugu/telugu_06_new.wav,telugu,మా ఇంటి దగ్గర ఒక పెద్ద చెట్టు ఉంది.,train
+data/audio/english/english_07_new.wav,english,The flowers are fresh today.,train
+data/audio/english/english_08_new.wav,english,Please open the front door.,train
+data/audio/english/english_09_new.wav,english,The train arrived on time.,train
+data/audio/english/english_10_new.wav,english,People enjoy music in the park.,train
+data/audio/english/english_11_new.wav,english,My friend found a small bird.,train
+data/audio/english/english_12_new.wav,english,Today feels warm and sunny.,train
+data/audio/english/english_13_new.wav,english,Please bring a cup of water.,train
+data/audio/english/english_14_new.wav,english,The phone is on the table.,train
+data/audio/english/english_15_new.wav,english,Fresh fruit is good for health.,train
+data/audio/english/english_16_new.wav,english,Our project is progressing well.,train
+data/audio/telugu/telugu_07_new.wav,telugu,అమ్మ నాకు పాటలు ఇష్టం.,train
+data/audio/telugu/telugu_08_new.wav,telugu,అక్కడ పుస్తకం చదువుతున్నది.,train
+data/audio/telugu/telugu_09_new.wav,telugu,అది ఇంటికి వచ్చారు.,train
+data/audio/telugu/telugu_10_new.wav,telugu,మన దేశంలో ఎన్నో భాషలు ఉన్నాయి.,train
+data/audio/telugu/telugu_11_new.wav,telugu,ఉదయం ఆకాశం అందంగా ఉంది.,train
+data/audio/telugu/telugu_12_new.wav,telugu,అతను పాఠశాలకు వెళ్లి వచ్చాడు.,train
+data/audio/telugu/telugu_13_new.wav,telugu,పిల్లలు బయట ఆటలు ఆడుతున్నారు.,train
+data/audio/telugu/telugu_14_new.wav,telugu,అమ్మ చాలా సంతోషంగా ఉంది.,train
+data/audio/telugu/telugu_15_new.wav,telugu,ఈ రోజు నాకు సెలవు.,train
+data/audio/telugu/telugu_16_new.wav,telugu,మా ఇంట్లో అందరూ కలిసి భోజనం చేశారు.,train

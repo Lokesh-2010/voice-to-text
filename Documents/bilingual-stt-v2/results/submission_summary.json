@@ -1,0 +1,67 @@
+{
+  "scope": "aggregate evaluation metrics only; no audio paths, transcripts, or predictions",
+  "from_scratch_cnn_bilstm_ctc": {
+    "expanded_vocabulary_tokens": 75,
+    "training_recordings": 28,
+    "validation_recordings": 2,
+    "test_recordings": 2,
+    "checkpoint_training_epochs": 20,
+    "final_training_loss": 3.6366352353777205,
+    "final_validation_loss": 3.6660165786743164,
+    "validation_greedy": {
+      "english": {
+        "samples": 1,
+        "cer": 0.98,
+        "blank_frames": 103,
+        "frames": 104
+      },
+      "telugu": {
+        "samples": 1,
+        "cer": 0.9772727272727273,
+        "blank_frames": 107,
+        "frames": 108
+      },
+      "combined_character_weighted": {
+        "samples": 2,
+        "cer": 0.9787234042553191,
+        "blank_frames": 210,
+        "frames": 212
+      }
+    },
+    "validation_prefix_beam_width_10": {
+      "combined_character_weighted_cer": 0.851063829787234,
+      "note": "Predictions were punctuation/whitespace only; lower CER did not indicate word recognition."
+    },
+    "legacy_checkpoint_test": {
+      "vocabulary_tokens": 60,
+      "training_epochs": 5,
+      "english_samples": 1,
+      "english_cer": 1.0,
+      "telugu_samples": 1,
+      "telugu_cer": 1.0,
+      "note": "This is an older checkpoint evaluated before dataset expansion, not the 75-token continuation."
+    }
+  },
+  "pretrained_whisper_small": {
+    "separate_from_from_scratch_model": true,
+    "english_validation": {
+      "samples": 1,
+      "cer": 0.0
+    },
+    "telugu_validation_original_run": {
+      "samples": 1,
+      "cer": 0.8409090909090909
+    },
+    "telugu_validation_comparison_rerun": {
+      "samples": 1,
+      "cer": 1.2954545454545454
+    },
+    "note": "Individual validation observations, not overall accuracy. The rerun used the same Whisper small model and sampling can vary."
+  },
+  "limitations": [
+    "Telugu recognition remains inaccurate.",
+    "One validation and one test sample per language cannot establish generalization.",
+    "Twenty-eight training recordings provide limited speaker, accent, vocabulary, and acoustic diversity.",
+    "Whisper small comparison CER can exceed 100 percent when insertions are present."
+  ]
+}
